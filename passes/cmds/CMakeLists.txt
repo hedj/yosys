@@ -11,6 +11,9 @@ yosys_pass(add
 yosys_pass(delete
 	delete.cc
 )
+yosys_pass(fixpoint
+	fixpoint.cc
+)
 yosys_pass(design
 	design.cc
   ESSENTIAL

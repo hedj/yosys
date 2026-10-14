@@ -1,0 +1,35 @@
+# Generic synthesis organised by abstraction level (prototype).
+#
+# Within a level, all optimisations run together until nothing changes, so
+# their relative order does not matter. Between levels there are one-way
+# lowerings, and nothing that needs the higher level runs after them.
+# Run with: hierarchy -top <top>; script +/synth_levels.ys
+
+# --- elaboration
+proc
+flatten
+opt_expr
+opt_clean
+check
+
+# --- word level: $add, $mul, $mux, $pmux, $eq, ..., $mem_v2, $dff
+fsm
+memory -nomap
+fixpoint "opt -full; wreduce; peepopt; share; muxpack; opt_clean"
+
+# --- lower word -> arith: $alu, $macc_v2
+alumacc
+
+# --- arith level
+fixpoint "opt -full; opt_clean"
+
+# --- lower arith/memory -> gates
+memory_map
+techmap
+
+# --- gate level
+fixpoint "opt -fast; opt_clean"
+abc
+opt -fast
+hierarchy -check
+check

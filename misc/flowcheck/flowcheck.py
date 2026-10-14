@@ -142,6 +142,7 @@ def parents(events):
 def analyse(events):
     """Return findings for one trace (a list of pass events in execution order)."""
     lowered_by = {}  # type -> (pass name, cmd, set of types it became)
+    had_chance = {}  # pass name -> types that were live when it ran
     ancestors = parents(events)
     findings = []
     for i, ev in enumerate(events):
@@ -161,6 +162,8 @@ def analyse(events):
                         continue
                     if name in LOWERING_PASSES and (by == name or is_target_mapping(by, became)):
                         continue
+                    if t in had_chance.get(name, ()):
+                        continue  # an earlier run of this pass already saw these cells
                     lost.setdefault((by, cmd), set()).add(t)
             for (by, cmd), types in lost.items():
                 became = set().union(*(lowered_by[t][2] for t in types))
@@ -171,6 +174,7 @@ def analyse(events):
                     "msg": f"`{ev['cmd']}` handles {', '.join(sorted(types))}, but `{cmd}` already "
                            f"lowered them to {', '.join(sorted(became))}, which it does not handle",
                 })
+            had_chance.setdefault(name, set()).update(t for t in contract.consumes if before.get(t))
             lv_before = levels_present(before)
             if (lv_before and min(lv_before) > max(contract.levels)
                     and not LEVEL_AGNOSTIC_PARENTS & set(ancestors[i])):
