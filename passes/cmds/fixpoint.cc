@@ -110,4 +110,100 @@ struct FixpointPass : public Pass {
 	}
 } FixpointPass;
 
+static std::string unquote(std::string s)
+{
+	if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+		return s.substr(1, s.size() - 2);
+	return s;
+}
+
+static int count_cells(RTLIL::Design *design)
+{
+	int n = 0;
+	for (auto module : design->modules())
+		for (auto cell : module->cells())
+			if (cell->type != ID($scopeinfo))
+				n++;
+	return n;
+}
+
+struct BestofPass : public Pass {
+	BestofPass() : Pass("bestof", "try alternative command sequences and keep the best result") { }
+	void help() override
+	{
+		//   |---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|
+		log("\n");
+		log("    bestof [-cost \"<commands>\"] \"<alternative>\" \"<alternative>\" ...\n");
+		log("\n");
+		log("Run each alternative (a ';'-separated command list) on a copy of the current\n");
+		log("design, then keep the result of the cheapest one. Alternatives that produce\n");
+		log("structurally identical designs are only costed once.\n");
+		log("\n");
+		log("The cost of a result is its cell count after running the cost commands on a\n");
+		log("further copy of it, so that choices are judged by what they lead to after\n");
+		log("lowering rather than by the cell count at the current level.\n");
+		log("\n");
+		log("    -cost \"<commands>\"\n");
+		log("        default: \"techmap; opt -fast; abc; opt -fast\"\n");
+		log("\n");
+		log("Ties go to the earliest alternative.\n");
+		log("\n");
+		log("Known issue: running the cost commands can change what later passes produce\n");
+		log("even though the kept design is restored exactly. With memory_map in the cost\n");
+		log("commands, picorv32 ends up at 9145 instead of 7818 cells. The cause is global\n");
+		log("state that design -save/-load does not cover; it is not autoidx or name\n");
+		log("interning.\n");
+		log("\n");
+	}
+	void execute(std::vector<std::string> args, RTLIL::Design *design) override
+	{
+		std::string cost_script = "techmap; opt -fast; abc; opt -fast";
+		std::vector<std::string> alternatives;
+		for (size_t argidx = 1; argidx < args.size(); argidx++) {
+			if (args[argidx] == "-cost" && argidx + 1 < args.size()) {
+				cost_script = unquote(args[++argidx]);
+				continue;
+			}
+			alternatives.push_back(unquote(args[argidx]));
+		}
+		if (alternatives.empty())
+			log_cmd_error("No alternatives given.\n");
+
+		log_header(design, "Executing BESTOF pass.\n");
+		log_push();
+		Pass::call(design, "design -save __bestof_base");
+
+		dict<Hasher::hash_t, int> seen; // design signature -> alternative index
+		std::vector<int> costs(alternatives.size(), -1);
+		int best = -1;
+		for (int i = 0; i < GetSize(alternatives); i++) {
+			log_header(design, "Alternative %d: %s\n", i + 1, alternatives[i]);
+			Pass::call(design, "design -load __bestof_base");
+			Pass::call(design, alternatives[i]);
+			auto sig = design_signature(design);
+			if (seen.count(sig)) {
+				costs[i] = costs[seen.at(sig)];
+				log("Same result as alternative %d.\n", seen.at(sig) + 1);
+				continue;
+			}
+			seen[sig] = i;
+			Pass::call(design, stringf("design -save __bestof_%d", i));
+			Pass::call(design, cost_script);
+			costs[i] = count_cells(design);
+			if (best < 0 || costs[i] < costs[best])
+				best = i;
+		}
+
+		Pass::call(design, stringf("design -load __bestof_%d", best));
+		Pass::call(design, "design -delete __bestof_base");
+		for (auto &it : seen)
+			Pass::call(design, stringf("design -delete __bestof_%d", it.second));
+		log_pop();
+
+		for (int i = 0; i < GetSize(alternatives); i++)
+			log("  %s cost %6d  %s\n", i == best ? "*" : " ", costs[i], alternatives[i]);
+		log("Kept alternative %d.\n", best + 1);
+	}
+} BestofPass;
+
 PRIVATE_NAMESPACE_END

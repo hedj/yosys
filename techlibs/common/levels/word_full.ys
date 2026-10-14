@@ -1,0 +1,2 @@
+# Word-level optimisations run to a joint fixed point (opt -full).
+fixpoint "opt -full; wreduce; peepopt; share; muxpack; opt_clean"

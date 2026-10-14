@@ -1197,10 +1197,11 @@ struct ScriptCmdPass : public Pass {
 		}
 		else if (args.size() < 2)
 			log_cmd_error("Missing script file.\n");
-		else if (args.size() == 2)
-			run_frontend(args[1], "script", design);
-		else if (args.size() == 3)
-			run_frontend(args[1], "script", design, &args[2]);
+		else if (args.size() <= 3) {
+			std::string filename = args[1];
+			rewrite_filename(filename);
+			run_frontend(filename, "script", design, args.size() == 3 ? &args[2] : nullptr);
+		}
 		else
 			extra_args(args, 2, design, false);
 	}

@@ -43,6 +43,9 @@ yosys_pass(synth
 		cmp2lcu.v
 		cmp2softlogic.v
 		synth_levels.ys
+		synth_bestof.ys
+		levels/word.ys
+		levels/word_full.ys
 
 		choices/kogge-stone.v
 		choices/han-carlson.v

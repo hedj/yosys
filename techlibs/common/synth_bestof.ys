@@ -1,0 +1,32 @@
+# Generic synthesis organised by abstraction level, choosing the word-level
+# recipe per design (prototype). Where synth_levels hard-codes one choice of
+# FSM placement and opt vs opt -full, this tries each and keeps the one that
+# gives the fewest cells after a quick lowering.
+# Run with: hierarchy -top <top>; script +/synth_bestof.ys
+
+# --- elaboration
+proc
+flatten
+opt_expr
+opt_clean
+check
+
+# --- word level: pick the recipe by its lowered cost
+bestof -cost "alumacc; opt; memory_map; techmap; opt -fast; abc; opt -fast" "fsm; memory -nomap; script +/levels/word_full.ys" "fsm; memory -nomap; script +/levels/word.ys" "opt -nodffe -nosdff; fsm; memory -nomap; script +/levels/word_full.ys" "opt -nodffe -nosdff; fsm; memory -nomap; script +/levels/word.ys"
+
+# --- lower word -> arith
+alumacc
+
+# --- arith level
+fixpoint "opt -full; opt_clean"
+
+# --- lower arith/memory -> gates
+memory_map
+techmap
+
+# --- gate level
+fixpoint "opt -fast; opt_clean"
+abc
+opt -fast
+hierarchy -check
+check
