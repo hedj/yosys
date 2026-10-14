@@ -148,11 +148,9 @@ struct BestofPass : public Pass {
 		log("\n");
 		log("Ties go to the earliest alternative.\n");
 		log("\n");
-		log("Known issue: running the cost commands can change what later passes produce\n");
-		log("even though the kept design is restored exactly. With memory_map in the cost\n");
-		log("commands, picorv32 ends up at 9145 instead of 7818 cells. The cause is global\n");
-		log("state that design -save/-load does not cover; it is not autoidx or name\n");
-		log("interning.\n");
+		log("Caveat: several passes still order objects by IdString index (their position\n");
+		log("in the global name table), so the cost runs can still influence what later\n");
+		log("passes produce. See kernel/natural_order.h.\n");
 		log("\n");
 	}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override

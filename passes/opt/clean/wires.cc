@@ -17,6 +17,7 @@
  *
  */
 
+#include "kernel/natural_order.h"
 #include "passes/opt/clean/opt_clean.h"
 
 USING_YOSYS_NAMESPACE
@@ -139,7 +140,7 @@ bool compare_signals(const RTLIL::SigBit &s1, const RTLIL::SigBit &s2, const Sha
 	if (attrs1 != attrs2)
 		return attrs2 > attrs1;
 
-	return w2->name.lt_by_name(w1->name);
+	return lt_natural(w2->name, w1->name);
 }
 
 bool check_public_name(RTLIL::IdString id)
