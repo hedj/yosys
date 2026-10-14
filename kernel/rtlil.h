@@ -389,9 +389,22 @@ struct RTLIL::IdString
 	// interned before, and unlike a plain string compare it orders
 	// `$foo$9999` before `$foo$10000`, so auto-generated names sort by creation
 	// regardless of how far autoidx had advanced.
+	// Nonzero only for experiments: permutes the order lt_natural produces
+	// (set from the YOSYS_ORDER_SEED environment variable at startup).
+	static unsigned int order_seed;
+
 	inline bool lt_natural(IdString rhs) const {
 		if (index_ == rhs.index_)
 			return false;
+		if (order_seed) {
+			unsigned int ha = order_seed, hb = order_seed;
+			for (const char *p = c_str(); *p; p++)
+				ha = (ha ^ (unsigned char)*p) * 16777619u;
+			for (const char *p = rhs.c_str(); *p; p++)
+				hb = (hb ^ (unsigned char)*p) * 16777619u;
+			if (ha != hb)
+				return ha < hb;
+		}
 		if (index_ < 0 && rhs.index_ < 0) {
 			// Both are autoidx names: prefix followed by the autoidx value.
 			// With the same prefix, and a prefix that does not end in a digit,

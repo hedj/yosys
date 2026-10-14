@@ -42,6 +42,12 @@ std::unordered_map<std::string_view, int> RTLIL::IdString::global_id_index_;
 std::unordered_map<int, RTLIL::IdString::AutoidxStorage> RTLIL::IdString::global_autoidx_id_storage_;
 std::unordered_map<int, int> RTLIL::IdString::global_refcount_storage_;
 std::vector<int> RTLIL::IdString::global_free_idx_list_;
+static unsigned int initial_order_seed()
+{
+	const char *s = getenv("YOSYS_ORDER_SEED");
+	return s ? (unsigned int)strtoul(s, nullptr, 0) : 0;
+}
+unsigned int RTLIL::IdString::order_seed = initial_order_seed();
 
 static void populate(std::string_view name)
 {
