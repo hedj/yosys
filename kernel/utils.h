@@ -134,29 +134,17 @@ template <typename T, typename C = std::less<T>> class TopoSort
 	static_assert(!(std::is_pointer<T>::value && std::is_same<C, std::less<T>>::value),
 			"std::less is run-to-run unstable for pointers");
 public:
-	// We use this ordering of the edges in the adjacency matrix for
-	// exact compatibility with an older implementation.
-	struct IndirectCmp {
-		IndirectCmp(const std::vector<T> &nodes) : node_cmp_(), nodes_(nodes) {}
-		bool operator()(int a, int b) const
-		{
-			log_assert(static_cast<size_t>(a) < nodes_.size());
-			log_assert(static_cast<size_t>(b) < nodes_.size());
-			return node_cmp_(nodes_[a], nodes_[b]);
-		}
-		const C node_cmp_;
-		const std::vector<T> &nodes_;
-	};
-
 	bool analyze_loops;
-	// The stability doesn't rely on std::less of T, so pointers are safe
-	std::map<T, int, C> node_to_index;
-	// edges[i] is the set of nodes with an edge into node i
-	std::vector<std::set<int, IndirectCmp>> edges;
+	// Lookup only; the order of nodes and edges comes from C, applied once in
+	// sort(), so the comparator is not called on every node() and edge().
+	dict<T, int> node_to_index;
+	// edges[i] lists the nodes with an edge into node i (possibly with
+	// duplicates until sort() normalises it)
+	std::vector<std::vector<int>> edges;
 	std::vector<T> sorted;
 	std::set<std::vector<T>> loops;
 
-	TopoSort() : indirect_cmp(nodes)
+	TopoSort()
 	{
 		analyze_loops = true;
 		found_loops = false;
@@ -167,12 +155,17 @@ public:
 		auto rv = node_to_index.emplace(n, static_cast<int>(nodes.size()));
 		if (rv.second) {
 			nodes.push_back(n);
-			edges.push_back(std::set<int, IndirectCmp>(indirect_cmp));
+			edges.emplace_back();
 		}
 		return rv.first->second;
 	}
 
-	void edge(int l_index, int r_index) { edges[r_index].insert(l_index); }
+	void edge(int l_index, int r_index)
+	{
+		std::vector<int> &e = edges[r_index];
+		if (e.empty() || e.back() != l_index)
+			e.push_back(l_index);
+	}
 
 	void edge(T left, T right) { edge(node(left), node(right)); }
 
@@ -187,14 +180,29 @@ public:
 		sorted.clear();
 		found_loops = false;
 
+		// Visit nodes, and the edges into each node, in the order given by
+		// C. Rank the nodes once so that the rest compares integers.
+		std::vector<int> order(nodes.size());
+		for (int i = 0; i < GetSize(order); i++)
+			order[i] = i;
+		const C node_cmp;
+		std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return node_cmp(nodes[a], nodes[b]); });
+		std::vector<int> rank(nodes.size());
+		for (int i = 0; i < GetSize(order); i++)
+			rank[order[i]] = i;
+		for (auto &e : edges) {
+			std::sort(e.begin(), e.end(), [&](int a, int b) { return rank[a] < rank[b]; });
+			e.erase(std::unique(e.begin(), e.end()), e.end());
+		}
+
 		std::vector<bool> node_is_sorted(edges.size(), false);
 		std::vector<bool> node_is_on_stack(edges.size(), false);
 		// Only used with analyze_loops
 		std::vector<int> stack;
 		sorted.reserve(edges.size());
 
-		for (const auto &it : node_to_index)
-			sort_worker(it.second, node_is_sorted, node_is_on_stack, stack);
+		for (int index : order)
+			sort_worker(index, node_is_sorted, node_is_on_stack, stack);
 
 		log_assert(GetSize(sorted) == GetSize(nodes));
 
@@ -219,7 +227,6 @@ public:
 private:
 	bool found_loops;
 	std::vector<T> nodes;
-	const IndirectCmp indirect_cmp;
 
 	void sort_worker(const int root_index, std::vector<bool> &node_is_sorted, std::vector<bool> &node_is_on_stack, std::vector<int> &stack)
 	{
