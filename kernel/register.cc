@@ -274,6 +274,46 @@ void Pass::call(RTLIL::Design *design, std::string command)
 	call(design, args);
 }
 
+
+// Pass tracing for flow analysis: when YOSYS_PASS_TRACE names a file, every
+// Pass::call appends one JSON line with the cell type histogram before and
+// after the pass. See misc/flowcheck/ for the consumer.
+namespace {
+std::string json_escape(const std::string &str) {
+	std::string s = "\"";
+	for (char c : str) {
+		if (c == '"' || c == '\\')
+			s += '\\';
+		if ((unsigned char)c < 0x20)
+			s += stringf("\\u%04x", c);
+		else
+			s += c;
+	}
+	return s + "\"";
+}
+
+struct PassTrace {
+	FILE *f = nullptr;
+	int depth = 0;
+	PassTrace() {
+		const char *fn = getenv("YOSYS_PASS_TRACE");
+		if (fn && *fn)
+			f = fopen(fn, "a");
+	}
+	static std::string histogram(RTLIL::Design *design) {
+		std::map<std::string, int> counts;
+		for (auto module : design->modules())
+			for (auto cell : module->cells())
+				counts[cell->type.str()]++;
+		std::string s = "{";
+		for (auto &it : counts)
+			s += stringf("%s%s: %d", s.size() > 1 ? ", " : "", json_escape(it.first), it.second);
+		return s + "}";
+	}
+};
+PassTrace &pass_trace() { static PassTrace t; return t; }
+}
+
 void Pass::call(RTLIL::Design *design, std::vector<std::string> args)
 {
 	if (args.size() == 0 || args[0][0] == '#' || args[0][0] == ':')
@@ -299,9 +339,24 @@ void Pass::call(RTLIL::Design *design, std::vector<std::string> args)
 		log_experimental(args[0]);
 
 	size_t orig_sel_stack_pos = design->selection_stack.size();
+	auto &trace = pass_trace();
+	std::string trace_before;
+	if (trace.f) {
+		trace_before = PassTrace::histogram(design);
+		trace.depth++;
+	}
 	auto state = pass->pre_execute();
 	pass->execute(args, design);
 	pass->post_execute(state);
+	if (trace.f) {
+		trace.depth--;
+		std::string cmd;
+		for (auto &arg : args)
+			cmd += (cmd.empty() ? "" : " ") + arg;
+		fprintf(trace.f, "{\"depth\": %d, \"pass\": %s, \"cmd\": %s, \"before\": %s, \"after\": %s}\n",
+				trace.depth, json_escape(args[0]).c_str(), json_escape(cmd).c_str(), trace_before.c_str(), PassTrace::histogram(design).c_str());
+		fflush(trace.f);
+	}
 	while (design->selection_stack.size() > orig_sel_stack_pos)
 		design->pop_selection();
 }
