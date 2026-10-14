@@ -148,9 +148,9 @@ struct BestofPass : public Pass {
 		log("\n");
 		log("Ties go to the earliest alternative.\n");
 		log("\n");
-		log("Caveat: several passes still order objects by IdString index (their position\n");
-		log("in the global name table), so the cost runs can still influence what later\n");
-		log("passes produce. See kernel/natural_order.h.\n");
+		log("Caveat: containers keyed by IdString (std::map, std::set) still order by\n");
+		log("position in the global name table, so the cost runs can in principle still\n");
+		log("influence later passes. See IdString::lt_natural in kernel/rtlil.h.\n");
 		log("\n");
 	}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override

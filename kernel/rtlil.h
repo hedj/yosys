@@ -383,6 +383,50 @@ struct RTLIL::IdString
 		return Substrings(global_autoidx_id_storage_.at(index_).prefix, -index_);
 	}
 
+	// Order like lt_by_name, but compare runs of digits by value. This is a
+	// reproducible order: unlike operator< (which compares positions in the
+	// global name table) it does not depend on which names the process has
+	// interned before, and unlike a plain string compare it orders
+	// `$foo$9999` before `$foo$10000`, so auto-generated names sort by creation
+	// regardless of how far autoidx had advanced.
+	inline bool lt_natural(IdString rhs) const {
+		if (index_ == rhs.index_)
+			return false;
+		if (index_ < 0 && rhs.index_ < 0) {
+			// Both are autoidx names: prefix followed by the autoidx value.
+			// With the same prefix, and a prefix that does not end in a digit,
+			// the digit-aware order is the order of the autoidx values.
+			const std::string *pa = global_autoidx_id_storage_.at(index_).prefix;
+			const std::string *pb = global_autoidx_id_storage_.at(rhs.index_).prefix;
+			if ((pa == pb || *pa == *pb) && !pa->empty() && (pa->back() < '0' || pa->back() > '9'))
+				return -index_ < -rhs.index_;
+		}
+		const char *a = c_str(), *b = rhs.c_str();
+		while (*a && *b) {
+			if (*a >= '0' && *a <= '9' && *b >= '0' && *b <= '9') {
+				const char *a0 = a, *b0 = b;
+				while (*a0 == '0') a0++;
+				while (*b0 == '0') b0++;
+				const char *a1 = a0, *b1 = b0;
+				while (*a1 >= '0' && *a1 <= '9') a1++;
+				while (*b1 >= '0' && *b1 <= '9') b1++;
+				if (a1 - a0 != b1 - b0)
+					return a1 - a0 < b1 - b0;
+				int c = memcmp(a0, b0, a1 - a0);
+				if (c != 0)
+					return c < 0;
+				if (a1 - a != b1 - b)
+					return a1 - a < b1 - b;
+				a = a1, b = b1;
+				continue;
+			}
+			if (*a != *b)
+				return (unsigned char)*a < (unsigned char)*b;
+			a++, b++;
+		}
+		return *a == 0 && *b != 0;
+	}
+
 	inline bool lt_by_name(IdString rhs) const {
 		Substrings lhs_it = substrings();
 		Substrings rhs_it = rhs.substrings();
@@ -528,7 +572,7 @@ struct RTLIL::IdString
 
 	template<typename T> struct compare_ptr_by_name {
 		bool operator()(const T *a, const T *b) const {
-			return (a == nullptr || b == nullptr) ? (a < b) : (a->name < b->name);
+			return (a == nullptr || b == nullptr) ? (a < b) : a->name.lt_natural(b->name);
 		}
 	};
 
@@ -781,7 +825,7 @@ namespace RTLIL {
 
 	template <typename T> struct sort_by_name_id {
 		bool operator()(T *a, T *b) const {
-			return a->name < b->name;
+			return a->name.lt_natural(b->name);
 		}
 	};
 
@@ -2642,7 +2686,7 @@ inline bool RTLIL::SigBit::operator<(const RTLIL::SigBit &other) const {
 	if (wire == other.wire)
 		return wire ? (offset < other.offset) : (data < other.data);
 	if (wire != nullptr && other.wire != nullptr)
-		return wire->name < other.wire->name;
+		return wire->name.lt_natural(other.wire->name);
 	return (wire != nullptr) < (other.wire != nullptr);
 }
 
